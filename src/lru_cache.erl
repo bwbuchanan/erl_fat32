@@ -12,16 +12,16 @@
 -author('bwb@holo.org').
 -export([new/1, get/2, put/3, flush/1]).
 
--record(cache, {capacity, num_entries=0, seq=0, values, order}).
+-record(lru_cache, {capacity, num_entries=0, seq=0, values, order}).
 
 new(Capacity) when Capacity >= 1 ->
-    #cache{capacity=Capacity, values=dict:new(), order=gb_trees:empty()}.
+    #lru_cache{capacity=Capacity, values=dict:new(), order=gb_trees:empty()}.
 
 flush(Cache) ->
-    new(Cache#cache.capacity).
+    new(Cache#lru_cache.capacity).
 
 get(Key, Cache) ->
-    case dict:find(Key, Cache#cache.values) of
+    case dict:find(Key, Cache#lru_cache.values) of
         {ok, {Value, Seq}} ->
             {Value, update_lru(Key, Seq, Value, Cache)};
         error ->
@@ -29,33 +29,33 @@ get(Key, Cache) ->
     end.
 
 put(Key, Value, Cache) ->
-    Seq = Cache#cache.seq,
-    Cache1 = Cache#cache{values=dict:store(Key, {Value, Seq}, Cache#cache.values),
-                         seq=Seq + 1},
-    case dict:find(Key, Cache#cache.values) of
+    Seq = Cache#lru_cache.seq,
+    Cache1 = Cache#lru_cache{values=dict:store(Key, {Value, Seq}, Cache#lru_cache.values),
+                             seq=Seq + 1},
+    case dict:find(Key, Cache#lru_cache.values) of
         {_, OldSeq} ->
-            Cache1#cache{order=gb_trees:enter(Seq, Key, gb_trees:delete(OldSeq, Cache#cache.order))};
+            Cache1#lru_cache{order=gb_trees:enter(Seq, Key, gb_trees:delete(OldSeq, Cache#lru_cache.order))};
         error ->
             add_key(Key, Seq, Cache1)
     end.
 
 add_key(Key, Seq, Cache) ->
-    Cache1 = Cache#cache{order=gb_trees:enter(Seq, Key, Cache#cache.order)},
-    case Cache1#cache.num_entries of
-        Capacity when Capacity =:= Cache1#cache.capacity ->
+    Cache1 = Cache#lru_cache{order=gb_trees:enter(Seq, Key, Cache#lru_cache.order)},
+    case Cache1#lru_cache.num_entries of
+        Capacity when Capacity =:= Cache1#lru_cache.capacity ->
             remove_lru(Cache1);
         NEntries ->
-            Cache1#cache{num_entries=NEntries + 1}
+            Cache1#lru_cache{num_entries=NEntries + 1}
     end.
 
-update_lru(_, OldSeq, _, Cache) when Cache#cache.seq =:= OldSeq + 1 ->
+update_lru(_, OldSeq, _, Cache) when Cache#lru_cache.seq =:= OldSeq + 1 ->
     Cache;
 update_lru(Key, OldSeq, Value, Cache) ->
-    Seq = Cache#cache.seq,
-    Cache#cache{seq=Seq + 1,
-                order=gb_trees:enter(Seq, Key, gb_trees:delete(OldSeq, Cache#cache.order)),
-                values=dict:store(Key, {Value, Seq}, Cache#cache.values)}.
+    Seq = Cache#lru_cache.seq,
+    Cache#lru_cache{seq=Seq + 1,
+                    order=gb_trees:enter(Seq, Key, gb_trees:delete(OldSeq, Cache#lru_cache.order)),
+                    values=dict:store(Key, {Value, Seq}, Cache#lru_cache.values)}.
 
 remove_lru(Cache) ->
-    {_, Key, NewOrder} = gb_trees:take_smallest(Cache#cache.order),
-    Cache#cache{order=NewOrder, values=dict:erase(Key, Cache#cache.values)}.
+    {_, Key, NewOrder} = gb_trees:take_smallest(Cache#lru_cache.order),
+    Cache#lru_cache{order=NewOrder, values=dict:erase(Key, Cache#lru_cache.values)}.
